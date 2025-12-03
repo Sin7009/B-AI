@@ -1,6 +1,6 @@
 # B-AI
 
-'''
+```mermaid
 graph TD
     %% Палитра (Sberbank approximates)
     classDef input fill:#FAFAF1,stroke:#333,stroke-width:1px,color:#000;
@@ -65,4 +65,4 @@ graph TD
     class ParallelOps,Ag_Sys,Ag_Cre,Ag_Crit,Synthesizer tactic;
     class Emergency,FactCheck,PostMortem feedback;
 
-'''
+```
