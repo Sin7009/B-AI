@@ -1,0 +1,7 @@
+langchain-openai
+langgraph
+langchain-core
+python-dotenv
+rich
+nest_asyncio
+tenacity
