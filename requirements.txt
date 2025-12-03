@@ -5,3 +5,5 @@ python-dotenv
 rich
 nest_asyncio
 tenacity
+langchain-community
+duckduckgo-search
