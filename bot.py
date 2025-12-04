@@ -100,6 +100,7 @@ async def handle_message(message: types.Message):
 
     # 3. Send "Thinking" message
     status_msg = await message.answer("🧠 <b>Анализирую задачу...</b>")
+    last_sent_text = "🧠 <b>Анализирую задачу...</b>" # <--- ДОБАВЛЕНО: запоминаем текст
 
     # 4. Stream Graph Execution
     final_verdict = ""
@@ -142,13 +143,16 @@ async def handle_message(message: types.Message):
             # Throttling updates to avoid Telegram 429 Errors
             current_time = time.time()
             if (current_time - last_update_time >= UPDATE_INTERVAL):
-                try:
-                    # Only edit if text actually changed (aiogram handles this optimization often, but explicit is better)
-                    if progress_text != status_msg.html_text:
+                # Проверяем, изменился ли текст по сравнению с ПОСЛЕДНИМ ОТПРАВЛЕННЫМ
+                if progress_text != last_sent_text:
+                    try:
                         await status_msg.edit_text(progress_text)
+                        last_sent_text = progress_text # Обновляем запомненный текст
                         last_update_time = current_time
-                except Exception as e:
-                    logger.warning(f"Failed to update status message: {e}")
+                    except Exception as e:
+                        # Игнорируем ошибку "текст не изменился", логируем остальные
+                        if "message is not modified" not in str(e):
+                            logger.warning(f"Failed to update status message: {e}")
 
             # Capture verdict
             if event.get("final_verdict"):
