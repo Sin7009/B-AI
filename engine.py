@@ -4,6 +4,8 @@ from typing import List, TypedDict, Dict, Optional, Any
 
 from dotenv import load_dotenv
 
+from cognitive_layer import CognitiveScaffolder, ProblemType
+
 # LangChain & LangGraph
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
@@ -37,6 +39,17 @@ class SimpleSearch:
             return f"Search Error: {str(e)}"
 
 search = SimpleSearch()
+
+# Инициализируем скаффолдер
+scaffolder = CognitiveScaffolder()
+
+# Карта: какой агент как должен думать
+ROLE_TO_COGNITIVE = {
+    "TRIZ": ProblemType.DESIGN,        # Творчество
+    "SYSTEM": ProblemType.DIAGNOSIS,   # Анализ узких мест
+    "CRITIC": ProblemType.DIAGNOSIS,   # Поиск рисков
+    "SYNTHESIZER": ProblemType.DIAGNOSIS # Финальное решение
+}
 
 # Initialize LLM
 llm = ChatOpenAI(
@@ -148,6 +161,12 @@ async def call_llm_async(role: str, context: str, user_query: str = "") -> str:
                  feedback_context = f"\nВАЖНОЕ УТОЧНЕНИЕ ОТ ПОЛЬЗОВАТЕЛЯ: {context}"
             system_msg = system_msg.format(feedback_context=feedback_context)
 
+        # --- [NEW] ВНЕДРЕНИЕ КОГНИТИВНОГО СЛОЯ ---
+        if role in ROLE_TO_COGNITIVE:
+            cognitive_type = ROLE_TO_COGNITIVE[role]
+            system_msg = scaffolder.enhance_prompt(system_msg, cognitive_type)
+        # -----------------------------------------
+
         prompt_msgs = [("system", system_msg), ("user", "{input}")]
         prompt = ChatPromptTemplate.from_messages(prompt_msgs)
         chain = prompt | llm | StrOutputParser()
@@ -236,6 +255,12 @@ async def node_fact_checker(state: AgentState):
 
 async def node_synthesizer(state: AgentState):
     system_msg = PROMPTS["SYNTHESIZER"]
+
+    # --- [NEW] ВНЕДРЕНИЕ КОГНИТИВНОГО СЛОЯ ---
+    # Синтезатор должен использовать строгий диагноз, чтобы отфильтровать бред
+    system_msg = scaffolder.enhance_prompt(system_msg, ProblemType.DIAGNOSIS)
+    # -----------------------------------------
+
     research_data = state.get("research_output", "Нет данных")
 
     context = f"""
