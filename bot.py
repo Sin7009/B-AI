@@ -2,6 +2,7 @@ import os
 import asyncio
 import logging
 import sys
+import time
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
@@ -110,12 +111,10 @@ async def handle_message(message: types.Message):
     input_state = {
         "messages": [HumanMessage(content=query)],
         "user_query": query,
-        # We might need to fetch previous state to get 'original_task' if this is a RETRY
-        # For simplicity, we pass empty original_task, assuming the graph state persistence handles context
-        # But wait, 'original_task' is in the state schema.
-        # If the checkpointer is working, 'original_task' from previous run is preserved if we don't overwrite it?
-        # Actually, LangGraph merges input with current state.
     }
+
+    last_update_time = 0
+    UPDATE_INTERVAL = 1.0  # Seconds
 
     try:
         async for event in graph.astream(input_state, config, stream_mode="values"):
@@ -139,26 +138,29 @@ async def handle_message(message: types.Message):
             if event.get("critic_out"): progress_text += "\n✅ Риски оценены"
             if event.get("research_output"): progress_text += "\n🔍 Факты проверены"
 
-            # Avoid editing if text hasn't changed to prevent API limits
-            if status_msg.text != progress_text.replace("<b>", "").replace("</b>", ""): # Rough check
-                 # Actual check needs to be more robust against HTML parsing, but aiogram handles text equality?
-                 # Let's just try-except edit
-                 try:
-                     if progress_text != status_msg.html_text: # aiogram 3.x property
+            # Throttling updates to avoid Telegram 429 Errors
+            current_time = time.time()
+            if (current_time - last_update_time >= UPDATE_INTERVAL):
+                try:
+                    # Only edit if text actually changed (aiogram handles this optimization often, but explicit is better)
+                    if progress_text != status_msg.html_text:
                         await status_msg.edit_text(progress_text)
-                 except:
-                     pass
+                        last_update_time = current_time
+                except Exception as e:
+                    logger.warning(f"Failed to update status message: {e}")
 
             # Capture verdict
             if event.get("final_verdict"):
                 final_verdict = event["final_verdict"]
+                # Force final update of status
+                try:
+                    if progress_text != status_msg.html_text:
+                        await status_msg.edit_text(progress_text)
+                except:
+                    pass
 
             # Capture mode for immediate response
             if event.get("mode") == "CHITCHAT" and not final_verdict:
-                # Need to grab the last AIMessage?
-                # The orchestrator sets mode CHITCHAT but doesn't generate the text?
-                # Ah, in original main.py: if mode == "CHITCHAT": response = "..."
-                # We need to handle this.
                 pass
 
         # 5. Final Output
