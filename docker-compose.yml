@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
+      POSTGRES_DB: epistemic_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  bot:
+    build: .
+    restart: always
+    depends_on:
+      - db
+    env_file:
+      - .env
+    environment:
+      # Строка подключения для алхимии/asyncpg внутри контейнера
+      # Обращаемся к сервису 'db'
+      POSTGRES_HOST: db
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
+      POSTGRES_DB: epistemic_db
+    volumes:
+      - .:/app
+
+volumes:
+  pg_data:
