@@ -167,7 +167,7 @@ async def handle_message(message: types.Message):
         # 5. Final Output
         # Delete progress message or keep it? Usually keep as log.
 
-        currentState = await graph.get_state(config)
+        currentState = await graph.aget_state(config)
         state_values = currentState.values
         mode = state_values.get("mode")
 
