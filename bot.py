@@ -34,8 +34,9 @@ if not BOT_TOKEN:
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
-# Global checkpointer variable
-checkpointer = None
+# --- GLOBAL VARIABLES ---
+checkpointer_context = None # Хранит саму "обертку" (Context Manager)
+checkpointer = None         # Хранит рабочий объект (Saver)
 
 # --- UTILS ---
 def format_progress_message(state_update: dict, current_text: str) -> str:
@@ -201,43 +202,31 @@ async def handle_message(message: types.Message):
 
 # --- STARTUP ---
 async def on_startup():
-    global checkpointer
+    global checkpointer, checkpointer_context
 
-    # Init DB
+    # Init DB (Users table)
     await db.init_db()
 
-    # Init Checkpointer
-    # We use the same connection string logic
-    conn_string = DATABASE_URL.replace("+asyncpg", "") # AsyncPostgresSaver uses psycopg logic?
-    # Wait, langgraph-checkpoint-postgres documentation says:
-    # AsyncPostgresSaver.from_conn_string("postgresql://user:pass@host:5432/db")
-    # Our URL has +asyncpg which might confuse it if it uses psycopg3 directly or asyncpg.
-    # Documentation says it uses `psycopg-pool`.
-    # Let's stick to standard postgres:// scheme for it if needed, but asyncpg scheme usually works for async libs.
-    # Let's try passing the pool or connection string.
-
-    # Actually, let's create the pool manually to be safe or use from_conn_string
-    # Fix: AsyncPostgresSaver requires 'postgresql://' scheme, not 'postgresql+asyncpg://'
-    checkpointer = AsyncPostgresSaver.from_conn_string(conn_string)
-
-    # Need to call setup to create checkpoint tables
-    # Note: from_conn_string is a context manager or returns an object?
-    # In async it's usually `async with ...`.
-    # But we need it to persist across requests.
-
-    # Correct pattern:
-    # async with AsyncPostgresSaver.from_conn_string(...) as checkpointer:
-    #    ...
-    # But we are in a long-running app.
-
-    # We will instantiate it here.
-    # NOTE: AsyncPostgresSaver needs to be entered (aentered) to set up the connection pool.
-    await checkpointer.__aenter__()
+    # Init Checkpointer (LangGraph State)
+    # Удаляем драйвер +asyncpg, так как checkpointer использует свой пул (обычно psycopg 3)
+    conn_string = DATABASE_URL.replace("+asyncpg", "") 
+    
+    # 1. Создаем контекстный менеджер
+    checkpointer_context = AsyncPostgresSaver.from_conn_string(conn_string)
+    
+    # 2. Входим в контекст вручную и СОХРАНЯЕМ результат в переменную checkpointer
+    # Именно этот объект имеет методы .setup(), .get(), .put()
+    checkpointer = await checkpointer_context.__aenter__()
+    
+    # 3. Теперь метод setup сработает
     await checkpointer.setup()
+    logger.info("Checkpointer initialized successfully.")
 
 async def on_shutdown():
-    if checkpointer:
-        await checkpointer.__aexit__(None, None, None)
+    # При выключении закрываем контекст
+    if checkpointer_context:
+        await checkpointer_context.__aexit__(None, None, None)
+        logger.info("Checkpointer connection closed.")
 
 # --- MAIN ---
 async def main():
@@ -246,4 +235,7 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Bot stopped!")
